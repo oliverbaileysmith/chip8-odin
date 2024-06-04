@@ -1,6 +1,5 @@
 package main
 
-import "core:fmt"
 import rl "vendor:raylib"
 
 DISPLAY_WIDTH :: 64
@@ -9,7 +8,7 @@ DISPLAY_SCALE :: 10
 
 chip8_state :: struct {
 	memory: [4096]u8, // 4 KiB memory, zero-initialized
-	display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]u8,
+	display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]bool,
 	program_counter: u16,
 	index_register: u16,
 	variable_registers: [16]u8,
@@ -18,6 +17,7 @@ chip8_state :: struct {
 	delay_timer: u8,
 	sound_timer: u8
 }
+
 
 @(private="file")
 state: chip8_state
@@ -55,6 +55,10 @@ chip8_init :: proc() {
 
 chip8_run :: proc() {
 	for !rl.WindowShouldClose() {
+		// Update
+		input_update()
+
+		// Render
 		rl.BeginDrawing()
 		rl.ClearBackground(rl.RAYWHITE)
 		rl.EndDrawing()
