@@ -1,17 +1,26 @@
 package main
 
 import "core:fmt"
+import rl "vendor:raylib"
 
 DISPLAY_WIDTH :: 64
 DISPLAY_HEIGHT :: 32
+DISPLAY_SCALE :: 10
 
 chip8_state :: struct {
-	memory : [4096]u8, // 4 KiB memory, zero-initialized
-	display : [DISPLAY_WIDTH * DISPLAY_HEIGHT]u8
+	memory: [4096]u8, // 4 KiB memory, zero-initialized
+	display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]u8,
+	program_counter: u16,
+	index_register: u16,
+	variable_registers: [16]u8,
+	stack: [16]u16,
+	stack_pointer: u8,
+	delay_timer: u8,
+	sound_timer: u8
 }
 
 @(private="file")
-state : chip8_state
+state: chip8_state
 
 font := []u8 {
 	0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -40,10 +49,18 @@ main :: proc() {
 
 chip8_init :: proc() {
 	copy(state.memory[0x50:0xA0], font)
+	rl.InitWindow(DISPLAY_WIDTH * DISPLAY_SCALE, DISPLAY_HEIGHT * DISPLAY_SCALE,
+		"chip8-odin")
 }
 
 chip8_run :: proc() {
+	for !rl.WindowShouldClose() {
+		rl.BeginDrawing()
+		rl.ClearBackground(rl.RAYWHITE)
+		rl.EndDrawing()
+	}
 }
 
 chip8_shut_down :: proc() {
+	rl.CloseWindow()
 }
