@@ -2,6 +2,7 @@ package main
 
 import "core:os"
 import "core:fmt"
+import "core:mem"
 import rl "vendor:raylib"
 
 DISPLAY_WIDTH :: 64
@@ -78,29 +79,109 @@ chip8_init :: proc() {
 		"chip8-odin")
 }
 
-chip8_decode :: proc(should_redraw: ^bool) -> bool {
+chip8_decode :: proc() -> bool {
 	// Fetch instruction
 	instruction: u16 = (u16(state.memory[state.pc]) << 8) |
 	u16(state.memory[state.pc + 1])
 	fmt.printfln("instruction: 0x%X", instruction)
 
-	type := instruction >> 12
-	x := (instruction & 0x0F00) >> 8
-	y := (instruction & 0x00F0) >> 4
-	n := instruction & 0x000F
-	nn := instruction & 0x00FF
-	nnn := instruction & 0x0FFF
+	type: u8 = u8(instruction >> 12) // First 4 bits
+	x: u8 = u8((instruction & 0x0F00) >> 8) // Second 4 bits
+	y: u8 = u8((instruction & 0x00F0) >> 4) // Third 4 bits
+	n: u8 = u8(instruction & 0x000F) // Last 4 bits
+	nn: u8 = u8(instruction & 0x00FF) // Last 8 bits
+	nnn: u16 = instruction & 0x0FFF // Last 12 bits
 	fmt.printfln("details: 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X", type, x, y, n,
 		nn, nnn)
 
 	state.pc += 2
 
-	// TODO: Decode and execute instruction
 	switch type {
 	case 0x0:
+		// Clear display
 		if instruction == 0x00E0 {
-			should_redraw^ = true
+			fmt.println("Clearing display")
+			mem.zero(&state.display, DISPLAY_WIDTH * DISPLAY_HEIGHT)
+		// Return from subroutine
+		/*
+		} else if instruction == 0x00EE {
+			state.pc = state.stack[state.sp]
+			state.stack[state.sp] = 0
+			state.sp -= 1
+		*/
+		} else {
+			fmt.printfln("Unrecognized instruction 0x%X", instruction)
+			return false
 		}
+
+	// Jump
+	case 0x1:
+		fmt.printfln("Jumping to 0x%X", nnn)
+		state.pc = nnn
+
+	// Call subroutine
+	/*
+	case 0x2:
+		state.stack[state.sp] = state.pc
+		state.sp += 1
+		state.pc = nnn
+	*/
+
+	// Set variable register
+	case 0x6:
+		fmt.printfln("Setting register 0x%X to 0x%X", x, nn)
+		state.v_reg[x] = nn
+
+	// Add to variable register
+	case 0x7:
+		fmt.printfln("Adding 0x%X to 0x%X", nn, x)
+		state.v_reg[x] += nn
+
+	// Set index register
+	case 0xA:
+		fmt.printfln("Setting index register to 0x%X", nnn)
+		state.i_reg = nnn
+
+	// Draw
+	case 0xD:
+		state.v_reg[0xF] = 0
+		sprite_x_pos := state.v_reg[x] % DISPLAY_WIDTH
+		sprite_y_pos := state.v_reg[y] % DISPLAY_HEIGHT
+		fmt.printfln("Drawing %d rows at %d, %d", n, sprite_x_pos, sprite_y_pos)
+
+		for row in 0..<n {
+			pixel_y_pos := sprite_y_pos + row
+			if pixel_y_pos >= DISPLAY_HEIGHT {
+				break
+			}
+
+			sprite_row: u8 = state.memory[state.i_reg + u16(row)]
+
+			for col in 0..<8 {
+				pixel_x_pos := sprite_x_pos + u8(col)
+				if pixel_x_pos >= DISPLAY_WIDTH {
+					break
+				}
+
+				pixel_index: u16 = u16(pixel_y_pos) * DISPLAY_WIDTH +
+					u16(pixel_x_pos)
+
+				should_swap_pixel: bool =
+					bool((sprite_row >> (7 - u8(col))) & 1)
+				pixel_is_on: bool = state.display[pixel_index]
+
+				if should_swap_pixel {
+					if pixel_is_on {
+						state.display[pixel_index] = false
+						state.v_reg[0xF] = 1
+					} else {
+						state.display[pixel_index] = true
+					}
+				}
+			}
+		}
+
+	// Default case
 	case:
 		fmt.printfln("Unrecognized instruction 0x%X", instruction)
 		return false
@@ -112,18 +193,15 @@ chip8_decode :: proc(should_redraw: ^bool) -> bool {
 chip8_run :: proc() {
 	for !rl.WindowShouldClose() {
 		start_time := rl.GetTime()
-		should_redraw := false
 
 		// Update
 		input_update()
-		if !chip8_decode(&should_redraw) {
+		if !chip8_decode() {
 			break
 		}
 
 		// Render
-		if should_redraw {
-			render()
-		}
+		render()
 
 		// Limit instructions per second by blocking
 		end_time := rl.GetTime()
