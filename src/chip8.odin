@@ -9,11 +9,13 @@ DISPLAY_WIDTH :: 64
 DISPLAY_HEIGHT :: 32
 DISPLAY_SCALE :: 16
 
+TARGET_FPS :: 60
 INSTRUCTIONS_PER_SECOND :: 700
-TARGET_INSTRUCTION_TIME :: 1 / INSTRUCTIONS_PER_SECOND
+INSTRUCTIONS_PER_FRAME :: INSTRUCTIONS_PER_SECOND / TARGET_FPS
 
 // TODO: Configurable ROM loading
-ROM_PATH :: "roms/IBM Logo.ch8"
+// ROM_PATH :: "roms/test_opcode.ch8"
+ROM_PATH :: "roms/TETRIS"
 
 chip8_state :: struct {
 	memory: [4096]u8, // 4 KiB memory, zero-initialized
@@ -77,13 +79,13 @@ chip8_init :: proc() {
 	// Create window
 	rl.InitWindow(DISPLAY_WIDTH * DISPLAY_SCALE, DISPLAY_HEIGHT * DISPLAY_SCALE,
 		"chip8-odin")
+	rl.SetTargetFPS(TARGET_FPS)
 }
 
 chip8_decode :: proc() -> bool {
 	// Fetch instruction
 	instruction: u16 = (u16(state.memory[state.pc]) << 8) |
 	u16(state.memory[state.pc + 1])
-	fmt.printfln("instruction: 0x%X", instruction)
 
 	type: u8 = u8(instruction >> 12) // First 4 bits
 	x: u8 = u8((instruction & 0x0F00) >> 8) // Second 4 bits
@@ -91,63 +93,143 @@ chip8_decode :: proc() -> bool {
 	n: u8 = u8(instruction & 0x000F) // Last 4 bits
 	nn: u8 = u8(instruction & 0x00FF) // Last 8 bits
 	nnn: u16 = instruction & 0x0FFF // Last 12 bits
-	fmt.printfln("details: 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X", type, x, y, n,
-		nn, nnn)
 
 	state.pc += 2
 
 	switch type {
 	case 0x0:
+		switch nn {
 		// Clear display
-		if instruction == 0x00E0 {
-			fmt.println("Clearing display")
+		case 0xE0:
 			mem.zero(&state.display, DISPLAY_WIDTH * DISPLAY_HEIGHT)
+
 		// Return from subroutine
-		/*
-		} else if instruction == 0x00EE {
+		case 0xEE:
+			state.sp -= 1
 			state.pc = state.stack[state.sp]
 			state.stack[state.sp] = 0
-			state.sp -= 1
-		*/
-		} else {
-			fmt.printfln("Unrecognized instruction 0x%X", instruction)
-			return false
+
+		// 0nnn ignored on modern interpreters
 		}
 
 	// Jump
 	case 0x1:
-		fmt.printfln("Jumping to 0x%X", nnn)
 		state.pc = nnn
 
 	// Call subroutine
-	/*
 	case 0x2:
 		state.stack[state.sp] = state.pc
 		state.sp += 1
 		state.pc = nnn
-	*/
+
+	// Skip one instruction if value in variable register x == nn
+	case 0x3:
+		if state.v_reg[x] == nn {
+			state.pc += 2
+		}
+
+	// Skip one instruction if value in variable register x != nn
+	case 0x4:
+		if state.v_reg[x] != nn {
+			state.pc += 2
+		}
+
+	// Skip one instruction if values in variable registers x and y are equal
+	case 0x5:
+		if state.v_reg[x] == state.v_reg[y] {
+			state.pc += 2
+		}
 
 	// Set variable register
 	case 0x6:
-		fmt.printfln("Setting register 0x%X to 0x%X", x, nn)
 		state.v_reg[x] = nn
 
 	// Add to variable register
 	case 0x7:
-		fmt.printfln("Adding 0x%X to 0x%X", nn, x)
 		state.v_reg[x] += nn
+
+	case 0x8:
+		switch n {
+		// Set
+		case 0x0:
+			state.v_reg[x] = state.v_reg[y]
+
+		// OR
+		case 0x1:
+			state.v_reg[x] |= state.v_reg[y]
+
+		// AND
+		case 0x2:
+			state.v_reg[x] &= state.v_reg[y]
+
+		// XOR
+		case 0x3:
+			state.v_reg[x] ~= state.v_reg[y]
+
+		// Add
+		case 0x4:
+			sum: u16 = u16(state.v_reg[x]) + u16(state.v_reg[y])
+			if sum > 255 {
+				state.v_reg[0xF] = 1
+			} else {
+				state.v_reg[0xF] = 0
+			}
+			state.v_reg[x] = u8(sum)
+
+		// Subtract y from x
+		case 0x5:
+			state.v_reg[0xF] = state.v_reg[x] > state.v_reg[y] ? 1 : 0
+			state.v_reg[x] -= state.v_reg[y]
+
+		// Shift right
+		case 0x6:
+			if state.v_reg[x] & 0x1 == 1 {
+				state.v_reg[0xF] = 1
+			} else {
+				state.v_reg[0xF] = 0
+			}
+			state.v_reg[x] >>= 1
+
+		// Subtract x from y
+		case 0x7:
+			state.v_reg[0xF] = state.v_reg[y] > state.v_reg[x] ? 1 : 0
+			state.v_reg[x] = state.v_reg[y] - state.v_reg[x]
+
+		// Shift left
+		case 0xE:
+			state.v_reg[0xF] = state.v_reg[x] >> 7
+			state.v_reg[x] <<= 1
+
+		// Default case
+		case:
+			fmt.printfln("Unrecognized instruction 0x%X", instruction)
+			return false
+		}
+
+	// Skip one instruction if values in variable registers x and y are not
+	// equal
+	case 0x9:
+		if state.v_reg[x] != state.v_reg[y] {
+			state.pc += 2
+		}
 
 	// Set index register
 	case 0xA:
-		fmt.printfln("Setting index register to 0x%X", nnn)
 		state.i_reg = nnn
+
+	// Jump with offset
+	case 0xB:
+		state.pc = u16(state.v_reg[0x0]) + nnn
+
+	// Random
+	case 0xC:
+		state.v_reg[x] = u8(rl.GetRandomValue(0, 255)) & nn
 
 	// Draw
 	case 0xD:
 		state.v_reg[0xF] = 0
 		sprite_x_pos := state.v_reg[x] % DISPLAY_WIDTH
 		sprite_y_pos := state.v_reg[y] % DISPLAY_HEIGHT
-		fmt.printfln("Drawing %d rows at %d, %d", n, sprite_x_pos, sprite_y_pos)
 
 		for row in 0..<n {
 			pixel_y_pos := sprite_y_pos + row
@@ -181,6 +263,96 @@ chip8_decode :: proc() -> bool {
 			}
 		}
 
+	case 0xE:
+		switch nn {
+		// Skip one instruction if key named in variable register x is down
+		case 0x9E:
+			if is_key_down(state.v_reg[x]) {
+				state.pc += 2
+			}
+
+		// Skip one instruction if key named in variable register x is up
+		case 0xA1:
+			if !is_key_down(state.v_reg[x]) {
+				state.pc += 2
+			}
+
+		// Default case
+		case:
+			fmt.printfln("Unrecognized instruction 0x%X", instruction)
+			return false
+		}
+
+	case 0xF:
+		switch nn {
+		// Set value of register x to value of delay timer
+		case 0x07:
+			state.v_reg[x] = state.delay_timer
+
+		// Await key press and store value in register x
+		case 0x0A:
+			for key in 0x0..=0xF {
+				if is_key_down(u8(key)) {
+					state.v_reg[x] = u8(key)
+					return true
+				}
+			}
+			state.pc -= 2
+
+		// Set value of delay timer to value of register x
+		case 0x15:
+			state.delay_timer = state.v_reg[x]
+
+		// Set value of sound timer to value of register x
+		case 0x18:
+			state.sound_timer = state.v_reg[x]
+
+		// Add value in register x to index register
+		case 0x1E:
+			state.i_reg += u16(state.v_reg[x])
+
+		// Set index register to point to sprite address of font character in
+		// register x 
+		case 0x29:
+			character: u8 = state.v_reg[x]
+			state.i_reg = 0x50 + u16(character) * 5
+
+		// Store binary coded decimal representation of value in register x
+		// starting at address pointed to by index register
+		case 0x33:
+			value: u8 = state.v_reg[x]
+
+			ones: u8 = value % 10
+			value /= 10
+			tens: u8 = value % 10
+			value /= 10
+			hundreds: u8 = value
+
+			state.memory[state.i_reg] = hundreds
+			state.memory[state.i_reg + 1] = tens
+			state.memory[state.i_reg + 2] = ones
+
+		// Store register values in memory pointed to by index register
+		case 0x55:
+			for offset in 0x0..=0xF {
+				value := state.v_reg[offset]
+				address := state.i_reg + u16(offset)
+				state.memory[address] = value
+			}
+		
+		// Load register values from memory pointed to by index register
+		case 0x65:
+			for offset in 0x0..=0xF {
+				address := state.i_reg + u16(offset)
+				state.v_reg[offset] = state.memory[address]
+			}
+
+		// Default case
+		case:
+			fmt.printfln("Unrecognized instruction 0x%X", instruction)
+			return false
+		}
+
 	// Default case
 	case:
 		fmt.printfln("Unrecognized instruction 0x%X", instruction)
@@ -192,25 +364,26 @@ chip8_decode :: proc() -> bool {
 
 chip8_run :: proc() {
 	for !rl.WindowShouldClose() {
-		start_time := rl.GetTime()
-
 		// Update
 		input_update()
-		if !chip8_decode() {
-			break
+		for step in 0..=INSTRUCTIONS_PER_FRAME {
+			if !chip8_decode() {
+				break
+			}
 		}
 
 		// Render
 		render()
 
-		// Limit instructions per second by blocking
-		end_time := rl.GetTime()
-		elapsed_time := end_time - start_time
+		// TODO: Verify and fix timing
+		// Decrement timers
+		delay: i16 = i16(state.delay_timer) - 1
+		delay = max(delay, 0)
+		state.delay_timer = u8(delay)
 
-		if (elapsed_time) < TARGET_INSTRUCTION_TIME {
-			wait_time := TARGET_INSTRUCTION_TIME - elapsed_time
-			rl.WaitTime(wait_time)
-		}
+		sound: i16 = i16(state.sound_timer) - 1
+		sound = max(sound, 0)
+		state.sound_timer = u8(sound)
 	}
 }
 
@@ -231,5 +404,6 @@ render :: proc() {
 			}
 		}
 	}
+
 	rl.EndDrawing()
 }
