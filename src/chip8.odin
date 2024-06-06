@@ -335,7 +335,7 @@ chip8_decode :: proc() -> bool {
 
 		// Store register values in memory pointed to by index register
 		case 0x55:
-			for offset in 0x0..=0xF {
+			for offset in 0x0..=x {
 				value := state.v_reg[offset]
 				address := state.i_reg + u16(offset)
 				state.memory[address] = value
@@ -343,7 +343,7 @@ chip8_decode :: proc() -> bool {
 		
 		// Load register values from memory pointed to by index register
 		case 0x65:
-			for offset in 0x0..=0xF {
+			for offset in 0x0..=x {
 				address := state.i_reg + u16(offset)
 				state.v_reg[offset] = state.memory[address]
 			}
