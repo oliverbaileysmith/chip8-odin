@@ -3,6 +3,7 @@ package main
 import "core:os"
 import "core:fmt"
 import "core:mem"
+import "core:strings"
 import rl "vendor:raylib"
 
 DISPLAY_WIDTH :: 64
@@ -363,36 +364,64 @@ chip8_decode :: proc() -> bool {
 }
 
 chip8_run :: proc() {
+	is_paused := false
+	debug_enabled := false
 	for !rl.WindowShouldClose() {
-		// Update
+		if rl.IsKeyPressed(rl.KeyboardKey.P) {
+			is_paused = !is_paused
+		}
+
+		if rl.IsKeyPressed(rl.KeyboardKey.I) {
+			debug_enabled = !debug_enabled
+		}
+
 		input_update()
-		for step in 0..=INSTRUCTIONS_PER_FRAME {
-			if !chip8_decode() {
-				break
+
+		rl.BeginDrawing()
+		if !is_paused {
+			for i in 0..=INSTRUCTIONS_PER_FRAME {
+				if !chip8_decode() {
+					break
+				}
+			}
+			decrement_timers()
+		} else {
+			if rl.IsKeyPressed(rl.KeyboardKey.SPACE) {
+				if !chip8_decode() {
+					break
+				}
+			}
+			if rl.IsKeyPressed(rl.KeyboardKey.T) {
+				decrement_timers()
 			}
 		}
 
 		// Render
-		render()
+		render_display()
+		if debug_enabled {
+			render_debug()
+		}
 
-		// TODO: Verify and fix timing
-		// Decrement timers
-		delay: i16 = i16(state.delay_timer) - 1
-		delay = max(delay, 0)
-		state.delay_timer = u8(delay)
-
-		sound: i16 = i16(state.sound_timer) - 1
-		sound = max(sound, 0)
-		state.sound_timer = u8(sound)
+		rl.EndDrawing()
 	}
+}
+
+decrement_timers :: proc() {
+	// TODO: Verify and fix timing
+	delay: i16 = i16(state.delay_timer) - 1
+	delay = max(delay, 0)
+	state.delay_timer = u8(delay)
+
+	sound: i16 = i16(state.sound_timer) - 1
+	sound = max(sound, 0)
+	state.sound_timer = u8(sound)
 }
 
 chip8_shut_down :: proc() {
 	rl.CloseWindow()
 }
 
-render :: proc() {
-	rl.BeginDrawing()
+render_display :: proc() {
 	rl.ClearBackground(rl.BLACK)
 
 	for y in 0..<DISPLAY_HEIGHT {
@@ -404,6 +433,61 @@ render :: proc() {
 			}
 		}
 	}
+}
 
-	rl.EndDrawing()
+render_debug :: proc() {
+	x_pos: i32
+	y_pos: i32
+	DEBUG_FONT_SIZE :: 2 * DISPLAY_SCALE
+
+	// Draw program counter, index register, and timers on left side
+	pc_text := fmt.aprintf("PC: 0x%3X", state.pc)
+	rl.DrawText(strings.clone_to_cstring(pc_text), x_pos, y_pos,
+		DEBUG_FONT_SIZE, rl.MAGENTA)
+	y_pos += DEBUG_FONT_SIZE
+
+	i_reg_text := fmt.aprintf("I: 0x%3X", state.i_reg)
+	rl.DrawText(strings.clone_to_cstring(i_reg_text), x_pos, y_pos,
+		DEBUG_FONT_SIZE, rl.MAGENTA)
+	y_pos += DEBUG_FONT_SIZE
+
+	dt_text := fmt.aprintf("DT: %d", state.delay_timer)
+	rl.DrawText(strings.clone_to_cstring(dt_text), x_pos, y_pos,
+		DEBUG_FONT_SIZE, rl.MAGENTA)
+	y_pos += DEBUG_FONT_SIZE
+
+	st_text := fmt.aprintf("ST: %d", state.sound_timer)
+	rl.DrawText(strings.clone_to_cstring(st_text), x_pos, y_pos,
+		DEBUG_FONT_SIZE, rl.MAGENTA)
+	y_pos += DEBUG_FONT_SIZE
+
+	sp_text := fmt.aprintf("SP: %d", state.sp)
+	rl.DrawText(strings.clone_to_cstring(sp_text), x_pos, y_pos,
+		DEBUG_FONT_SIZE, rl.MAGENTA)
+	y_pos += DEBUG_FONT_SIZE
+
+	// Draw stack below
+	if state.sp == 0 {
+		rl.DrawText("Stack: empty", x_pos, y_pos, DEBUG_FONT_SIZE, rl.MAGENTA)
+	} else {
+		rl.DrawText("Stack:", x_pos, y_pos, DEBUG_FONT_SIZE, rl.MAGENTA)
+	}
+	y_pos += DEBUG_FONT_SIZE
+
+	for i in 0..<state.sp {
+		stack_text := fmt.aprintf("%d: 0x%3X", i, state.stack[i])
+		rl.DrawText(strings.clone_to_cstring(stack_text), x_pos, y_pos,
+			DEBUG_FONT_SIZE, rl.MAGENTA)
+		y_pos += DEBUG_FONT_SIZE
+	}
+
+	// Draw variable registers on right side
+	x_pos = (DISPLAY_WIDTH - 10) * DISPLAY_SCALE
+	y_pos = 0
+	for i in 0x0..=0xF {
+		v_reg_text := fmt.aprintf("V%X: 0x%2X", i, state.v_reg[i])
+		rl.DrawText(strings.clone_to_cstring(v_reg_text), x_pos, y_pos,
+			DEBUG_FONT_SIZE, rl.MAGENTA)
+		y_pos += DEBUG_FONT_SIZE
+	}
 }
