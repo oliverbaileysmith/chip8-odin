@@ -107,7 +107,7 @@ input_update :: proc() {
 	}
 }
 
-is_key_down :: proc(key: u8) -> bool {
+is_hex_key_down :: proc(key: u8) -> bool {
 	assert(key >= 0x0 && key <= 0xF)
 	return input_state[key]
 }

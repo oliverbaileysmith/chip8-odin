@@ -274,13 +274,13 @@ chip8_decode :: proc() -> bool {
 		switch nn {
 		// Skip one instruction if key named in variable register x is down
 		case 0x9E:
-			if is_key_down(state.v_reg[x]) {
+			if is_hex_key_down(state.v_reg[x]) {
 				state.pc += 2
 			}
 
 		// Skip one instruction if key named in variable register x is up
 		case 0xA1:
-			if !is_key_down(state.v_reg[x]) {
+			if !is_hex_key_down(state.v_reg[x]) {
 				state.pc += 2
 			}
 
@@ -299,7 +299,7 @@ chip8_decode :: proc() -> bool {
 		// Await key press and store value in register x
 		case 0x0A:
 			for key in 0x0..=0xF {
-				if is_key_down(u8(key)) {
+				if is_hex_key_down(u8(key)) {
 					state.v_reg[x] = u8(key)
 					return true
 				}
