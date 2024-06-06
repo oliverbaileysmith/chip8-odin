@@ -12,12 +12,15 @@ DISPLAY_SCALE :: 16
 
 TARGET_FPS :: 60
 INSTRUCTIONS_PER_SECOND :: 700
-INSTRUCTIONS_PER_FRAME :: INSTRUCTIONS_PER_SECOND / TARGET_FPS
+DEFAULT_INSTRUCTIONS_PER_FRAME :: INSTRUCTIONS_PER_SECOND / TARGET_FPS
+MAX_INSTRUCTIONS_PER_FRAME :: 64
+MIN_INSTRUCTIONS_PER_FRAME :: 1
 
 // TODO: Configurable ROM loading
-ROM_PATH :: "roms/TETRIS"
+ROM_PATH :: "roms/PONG"
 
 chip8_state :: struct {
+	// Interpreter state
 	memory: [4096]u8, // 4 KiB memory, zero-initialized
 	display: [DISPLAY_WIDTH * DISPLAY_HEIGHT]bool,
 	pc: u16, // Program counter
@@ -26,7 +29,10 @@ chip8_state :: struct {
 	stack: [16]u16,
 	sp: u8, // Stack pointer
 	delay_timer: u8,
-	sound_timer: u8
+	sound_timer: u8,
+
+	// Application state
+	instructions_per_frame: u8
 }
 
 @(private="file")
@@ -75,6 +81,7 @@ chip8_init :: proc() {
 	}
 
 	state.pc = 0x200
+	state.instructions_per_frame = DEFAULT_INSTRUCTIONS_PER_FRAME
 
 	// Create window
 	rl.InitWindow(DISPLAY_WIDTH * DISPLAY_SCALE, DISPLAY_HEIGHT * DISPLAY_SCALE,
@@ -365,7 +372,13 @@ chip8_decode :: proc() -> bool {
 chip8_run :: proc() {
 	is_paused := false
 	debug_enabled := false
+	state.instructions_per_frame = DEFAULT_INSTRUCTIONS_PER_FRAME
+
 	for !rl.WindowShouldClose() {
+		// chip8 keypad
+		input_update()
+
+		// Debug keys
 		if rl.IsKeyPressed(rl.KeyboardKey.P) {
 			is_paused = !is_paused
 		}
@@ -374,11 +387,22 @@ chip8_run :: proc() {
 			debug_enabled = !debug_enabled
 		}
 
-		input_update()
+		if rl.IsKeyPressed(rl.KeyboardKey.RIGHT_BRACKET) {
+			if state.instructions_per_frame < MAX_INSTRUCTIONS_PER_FRAME {
+				state.instructions_per_frame += 1
+			}
+		}
 
+		if rl.IsKeyPressed(rl.KeyboardKey.LEFT_BRACKET) {
+			if state.instructions_per_frame > MIN_INSTRUCTIONS_PER_FRAME {
+				state.instructions_per_frame -= 1
+			}
+		}
+
+		// Update
 		rl.BeginDrawing()
 		if !is_paused {
-			for i in 0..=INSTRUCTIONS_PER_FRAME {
+			for i in 0..=state.instructions_per_frame {
 				if !chip8_decode() {
 					break
 				}
@@ -492,6 +516,13 @@ render_debug :: proc() {
 			y_pos += DEBUG_FONT_SIZE
 		}
 	}
+
+	// Draw instructions per frame in top center
+	x_pos = (DISPLAY_WIDTH / 2 - 3) * DISPLAY_SCALE
+	y_pos = 0
+	ipf_text := fmt.aprintf("IPF: %d", state.instructions_per_frame)
+	rl.DrawText(strings.clone_to_cstring(ipf_text), x_pos, y_pos,
+		DEBUG_FONT_SIZE, rl.MAGENTA)
 
 	// Draw variable registers on right side
 	x_pos = (DISPLAY_WIDTH - 10) * DISPLAY_SCALE
