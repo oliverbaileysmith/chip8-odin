@@ -15,7 +15,6 @@ INSTRUCTIONS_PER_SECOND :: 700
 INSTRUCTIONS_PER_FRAME :: INSTRUCTIONS_PER_SECOND / TARGET_FPS
 
 // TODO: Configurable ROM loading
-// ROM_PATH :: "roms/test_opcode.ch8"
 ROM_PATH :: "roms/TETRIS"
 
 chip8_state :: struct {
@@ -436,13 +435,26 @@ render_display :: proc() {
 }
 
 render_debug :: proc() {
+	// Darken chip8 display when drawing debug text on top
+	tint_color: rl.Color = {0x0, 0x0, 0x0, 0xB0}
+	rl.DrawRectangle(0, 0, DISPLAY_WIDTH * DISPLAY_SCALE, DISPLAY_HEIGHT *
+		DISPLAY_SCALE, tint_color)
+
 	x_pos: i32
 	y_pos: i32
 	DEBUG_FONT_SIZE :: 2 * DISPLAY_SCALE
 
-	// Draw program counter, index register, and timers on left side
+	// Draw program counter, next instruction, index register, and timers on
+	// left side
 	pc_text := fmt.aprintf("PC: 0x%3X", state.pc)
 	rl.DrawText(strings.clone_to_cstring(pc_text), x_pos, y_pos,
+		DEBUG_FONT_SIZE, rl.MAGENTA)
+	y_pos += DEBUG_FONT_SIZE
+
+	instruction: u16 = (u16(state.memory[state.pc]) << 8) |
+		u16(state.memory[state.pc + 1])
+	instruction_text := fmt.aprintf("INST: 0x%4X", instruction)
+	rl.DrawText(strings.clone_to_cstring(instruction_text), x_pos, y_pos,
 		DEBUG_FONT_SIZE, rl.MAGENTA)
 	y_pos += DEBUG_FONT_SIZE
 
@@ -461,24 +473,24 @@ render_debug :: proc() {
 		DEBUG_FONT_SIZE, rl.MAGENTA)
 	y_pos += DEBUG_FONT_SIZE
 
+	// Draw stack below
 	sp_text := fmt.aprintf("SP: %d", state.sp)
 	rl.DrawText(strings.clone_to_cstring(sp_text), x_pos, y_pos,
 		DEBUG_FONT_SIZE, rl.MAGENTA)
 	y_pos += DEBUG_FONT_SIZE
 
-	// Draw stack below
-	if state.sp == 0 {
-		rl.DrawText("Stack: empty", x_pos, y_pos, DEBUG_FONT_SIZE, rl.MAGENTA)
-	} else {
-		rl.DrawText("Stack:", x_pos, y_pos, DEBUG_FONT_SIZE, rl.MAGENTA)
-	}
+	rl.DrawText("Stack:", x_pos, y_pos, DEBUG_FONT_SIZE, rl.MAGENTA)
 	y_pos += DEBUG_FONT_SIZE
 
-	for i in 0..<state.sp {
-		stack_text := fmt.aprintf("%d: 0x%3X", i, state.stack[i])
-		rl.DrawText(strings.clone_to_cstring(stack_text), x_pos, y_pos,
-			DEBUG_FONT_SIZE, rl.MAGENTA)
-		y_pos += DEBUG_FONT_SIZE
+	if state.sp == 0 {
+		rl.DrawText("EMPTY", x_pos, y_pos, DEBUG_FONT_SIZE, rl.MAGENTA)
+	} else {
+		for i in 0..<state.sp {
+			stack_text := fmt.aprintf("%d: 0x%3X", i, state.stack[i])
+			rl.DrawText(strings.clone_to_cstring(stack_text), x_pos, y_pos,
+				DEBUG_FONT_SIZE, rl.MAGENTA)
+			y_pos += DEBUG_FONT_SIZE
+		}
 	}
 
 	// Draw variable registers on right side
