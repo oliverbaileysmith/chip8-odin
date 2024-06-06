@@ -9,6 +9,13 @@ DISPLAY_WIDTH :: 64
 DISPLAY_HEIGHT :: 32
 DISPLAY_SCALE :: 16
 
+FONT_ADDRESS :: 0x50
+FONT_SIZE :: 0x50
+FONT_CHARACTER_SIZE :: 0x5
+
+ROM_ADDRESS :: 0x200
+ROM_SIZE :: 0xE00
+
 TARGET_FPS :: 60
 INSTRUCTIONS_PER_SECOND :: 700
 DEFAULT_INSTRUCTIONS_PER_FRAME :: INSTRUCTIONS_PER_SECOND / TARGET_FPS
@@ -37,6 +44,7 @@ chip8_state :: struct {
 @(private="file")
 state: chip8_state
 
+@(private="file")
 font := []u8 {
 	0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
 	0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -64,7 +72,7 @@ main :: proc() {
 
 chip8_init :: proc() {
 	// Load font
-	copy(state.memory[0x50:0xA0], font)
+	copy(state.memory[FONT_ADDRESS:FONT_ADDRESS + FONT_SIZE], font)
 
 	// Load ROM
 	file, err := os.open(ROM_PATH)
@@ -74,12 +82,13 @@ chip8_init :: proc() {
 	defer os.close(file)
 
 	total_read: int
-	total_read, err = os.read(file, state.memory[0x0200:0x0FFF])
+	total_read, err = os.read(file, state.memory[ROM_ADDRESS:ROM_ADDRESS +
+		ROM_SIZE])
 	if err != os.ERROR_NONE {
 		fmt.println("Failed to read data from ROM:", ROM_PATH)
 	}
 
-	state.pc = 0x200
+	state.pc = ROM_ADDRESS
 	state.instructions_per_frame = DEFAULT_INSTRUCTIONS_PER_FRAME
 
 	// Create window
@@ -146,33 +155,33 @@ chip8_decode :: proc() -> bool {
 			state.pc += 2
 		}
 
-	// Set variable register
+	// Set variable register x to immediate
 	case 0x6:
 		state.v_reg[x] = nn
 
-	// Add to variable register
+	// Add immediate to variable register x
 	case 0x7:
 		state.v_reg[x] += nn
 
 	case 0x8:
 		switch n {
-		// Set
+		// Set variable register x to variable register y
 		case 0x0:
 			state.v_reg[x] = state.v_reg[y]
 
-		// OR
+		// OR variable registers x and y
 		case 0x1:
 			state.v_reg[x] |= state.v_reg[y]
 
-		// AND
+		// AND variable registers x and y
 		case 0x2:
 			state.v_reg[x] &= state.v_reg[y]
 
-		// XOR
+		// XOR variable registers x and y
 		case 0x3:
 			state.v_reg[x] ~= state.v_reg[y]
 
-		// Add
+		// Add variable registers x and y
 		case 0x4:
 			sum: u16 = u16(state.v_reg[x]) + u16(state.v_reg[y])
 			if sum > 255 {
@@ -182,12 +191,12 @@ chip8_decode :: proc() -> bool {
 			}
 			state.v_reg[x] = u8(sum)
 
-		// Subtract y from x
+		// Subtract variable register y from variable register x
 		case 0x5:
 			state.v_reg[0xF] = state.v_reg[x] > state.v_reg[y] ? 1 : 0
 			state.v_reg[x] -= state.v_reg[y]
 
-		// Shift right
+		// Shift variable register x right one
 		case 0x6:
 			if state.v_reg[x] & 0x1 == 1 {
 				state.v_reg[0xF] = 1
@@ -196,12 +205,12 @@ chip8_decode :: proc() -> bool {
 			}
 			state.v_reg[x] >>= 1
 
-		// Subtract x from y
+		// Subtract variable register x from variable register y
 		case 0x7:
 			state.v_reg[0xF] = state.v_reg[y] > state.v_reg[x] ? 1 : 0
 			state.v_reg[x] = state.v_reg[y] - state.v_reg[x]
 
-		// Shift left
+		// Shift variable register x left one
 		case 0xE:
 			state.v_reg[0xF] = state.v_reg[x] >> 7
 			state.v_reg[x] <<= 1
@@ -219,7 +228,7 @@ chip8_decode :: proc() -> bool {
 			state.pc += 2
 		}
 
-	// Set index register
+	// Set index register to immediate
 	case 0xA:
 		state.i_reg = nnn
 
@@ -305,15 +314,15 @@ chip8_decode :: proc() -> bool {
 			}
 			state.pc -= 2
 
-		// Set value of delay timer to value of register x
+		// Set value of delay timer to value of variable register x
 		case 0x15:
 			state.delay_timer = state.v_reg[x]
 
-		// Set value of sound timer to value of register x
+		// Set value of sound timer to value of variable register x
 		case 0x18:
 			state.sound_timer = state.v_reg[x]
 
-		// Add value in register x to index register
+		// Add value in variable register x to index register
 		case 0x1E:
 			state.i_reg += u16(state.v_reg[x])
 
@@ -321,7 +330,7 @@ chip8_decode :: proc() -> bool {
 		// register x 
 		case 0x29:
 			character: u8 = state.v_reg[x]
-			state.i_reg = 0x50 + u16(character) * 5
+			state.i_reg = FONT_ADDRESS + u16(character) * FONT_CHARACTER_SIZE
 
 		// Store binary coded decimal representation of value in register x
 		// starting at address pointed to by index register
@@ -338,7 +347,8 @@ chip8_decode :: proc() -> bool {
 			state.memory[state.i_reg + 1] = tens
 			state.memory[state.i_reg + 2] = ones
 
-		// Store register values in memory pointed to by index register
+		// Store values in registers 0 to x in memory starting at address in
+		// index register
 		case 0x55:
 			for offset in 0x0..=x {
 				value := state.v_reg[offset]
@@ -346,7 +356,8 @@ chip8_decode :: proc() -> bool {
 				state.memory[address] = value
 			}
 		
-		// Load register values from memory pointed to by index register
+		// Load values into registers 0 to x from memory starting at address in
+		// index register
 		case 0x65:
 			for offset in 0x0..=x {
 				address := state.i_reg + u16(offset)
@@ -429,7 +440,6 @@ chip8_run :: proc() {
 }
 
 decrement_timers :: proc() {
-	// TODO: Verify and fix timing
 	delay: i16 = i16(state.delay_timer) - 1
 	delay = max(delay, 0)
 	state.delay_timer = u8(delay)
@@ -442,4 +452,3 @@ decrement_timers :: proc() {
 chip8_shut_down :: proc() {
 	rl.CloseWindow()
 }
-
