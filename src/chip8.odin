@@ -22,9 +22,6 @@ DEFAULT_INSTRUCTIONS_PER_FRAME :: INSTRUCTIONS_PER_SECOND / TARGET_FPS
 MAX_INSTRUCTIONS_PER_FRAME :: 64
 MIN_INSTRUCTIONS_PER_FRAME :: 1
 
-// TODO: Configurable ROM loading
-ROM_PATH :: "roms/PONG"
-
 chip8_state :: struct {
 	// Interpreter state
 	memory: [4096]u8, // 4 KiB memory, zero-initialized
@@ -38,7 +35,8 @@ chip8_state :: struct {
 	sound_timer: u8,
 
 	// Application state
-	instructions_per_frame: u8
+	instructions_per_frame: u8,
+	rom_path: string
 }
 
 @(private="file")
@@ -65,27 +63,32 @@ font := []u8 {
 }
 
 main :: proc() {
-	chip8_init()
-	chip8_run()
-	chip8_shut_down()
+	if chip8_init() {
+		chip8_run()
+		chip8_shut_down()
+	}
 }
 
-chip8_init :: proc() {
+chip8_init :: proc() -> bool {
 	// Load font
 	copy(state.memory[FONT_ADDRESS:FONT_ADDRESS + FONT_SIZE], font)
 
 	// Load ROM
-	file, err := os.open(ROM_PATH)
+	state.rom_path = os.args[1]
+	file, err := os.open(state.rom_path)
 	if err != os.ERROR_NONE {
-		fmt.println("Failed to open ROM:", ROM_PATH)
+		fmt.println("Failed to open ROM:", state.rom_path)
+		os.close(file)
+		return false
 	}
-	defer os.close(file)
 
 	total_read: int
 	total_read, err = os.read(file, state.memory[ROM_ADDRESS:ROM_ADDRESS +
 		ROM_SIZE])
 	if err != os.ERROR_NONE {
-		fmt.println("Failed to read data from ROM:", ROM_PATH)
+		fmt.println("Failed to read data from ROM:", state.rom_path)
+		os.close(file)
+		return false
 	}
 
 	state.pc = ROM_ADDRESS
@@ -97,6 +100,7 @@ chip8_init :: proc() {
 	rl.SetTargetFPS(TARGET_FPS)
 
 	audio_init()
+	return true
 }
 
 chip8_decode :: proc() -> bool {
