@@ -94,6 +94,8 @@ chip8_init :: proc() -> bool {
 	state.pc = ROM_ADDRESS
 	state.instructions_per_frame = DEFAULT_INSTRUCTIONS_PER_FRAME
 
+	rl.SetTraceLogLevel(rl.TraceLogLevel.NONE);
+
 	// Create window
 	rl.InitWindow(DISPLAY_WIDTH * DISPLAY_SCALE, DISPLAY_HEIGHT * DISPLAY_SCALE,
 		"chip8-odin")
