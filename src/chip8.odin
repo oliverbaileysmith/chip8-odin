@@ -95,6 +95,8 @@ chip8_init :: proc() {
 	rl.InitWindow(DISPLAY_WIDTH * DISPLAY_SCALE, DISPLAY_HEIGHT * DISPLAY_SCALE,
 		"chip8-odin")
 	rl.SetTargetFPS(TARGET_FPS)
+
+	audio_init()
 }
 
 chip8_decode :: proc() -> bool {
@@ -429,6 +431,10 @@ chip8_run :: proc() {
 			}
 		}
 
+		// Audio
+		should_play := (state.sound_timer > 0) && !is_paused
+		audio_update(should_play)
+
 		// Render
 		render_display(&state.display)
 		if debug_enabled {
@@ -450,5 +456,6 @@ decrement_timers :: proc() {
 }
 
 chip8_shut_down :: proc() {
+	audio_shut_down()
 	rl.CloseWindow()
 }
