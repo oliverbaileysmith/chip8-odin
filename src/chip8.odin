@@ -74,6 +74,14 @@ chip8_init :: proc() -> bool {
 	copy(state.memory[FONT_ADDRESS:FONT_ADDRESS + FONT_SIZE], font)
 
 	// Load ROM
+	if len(os.args) < 2 {
+		fmt.println("Missing argument: no ROM to open.")
+		return false
+	} else if len(os.args) > 2 {
+		fmt.println("Too many arguments: ROM path should be the only argument.")
+		return false
+	}
+
 	state.rom_path = os.args[1]
 	file, err := os.open(state.rom_path)
 	if err != os.ERROR_NONE {
